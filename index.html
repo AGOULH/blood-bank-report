@@ -116,19 +116,33 @@
     .toolbar{display:none;}
     .sheet{box-shadow:none;border-radius:0;}
     [contenteditable]:hover{background:none;}
-    .section{page-break-inside:avoid;}
+    .section{page-break-inside:avoid;padding:6px 16px 2px;}
+    .section+.section{margin-top:0;}
+    .section-title{font-size:14px;margin:2px 0 6px;}
     .yearrow{grid-template-columns:1fr auto 1fr;gap:6px;}
-    .wheelwrap{order:0;padding-top:14px;}
-    .wheelwrap svg{width:120px;height:120px;}
+    .yearlabel{font-size:11px;margin-bottom:3px;}
+    .wheelwrap{order:0;padding-top:2px;}
+    .wheelwrap svg{width:86px;height:86px;}
     .donuts,.arrowrow,.icons,.metricblock{flex-wrap:nowrap;gap:8px;}
-    .donutcell,.iconcell,.metriccell,.arrow{width:48px;}
-    .donut{width:48px;height:48px;}
-    .donut .hole{width:33px;height:33px;font-size:9.5px;}
-    .iconbadge{width:40px;height:40px;}
-    .iconbadge svg{width:22px;height:22px;}
-    .metriclabel{font-size:9px;}
-    .metricval{font-size:11px;}
-    .details{font-size:10px;padding:8px 10px;}
+    .donutcell,.iconcell,.metriccell,.arrow{width:44px;}
+    .donut{width:44px;height:44px;}
+    .donut .hole{width:30px;height:30px;font-size:9px;}
+    .arrowrow{margin-top:2px;}
+    .arrow{height:12px;font-size:11px;}
+    .icons{margin-top:2px;}
+    .iconbadge{width:32px;height:32px;}
+    .iconbadge svg{width:18px;height:18px;}
+    .metricblock{margin-top:2px;}
+    .metriclabel{font-size:8px;height:11px;line-height:11px;}
+    .metricval{font-size:9.5px;height:13px;line-height:13px;margin-top:1px;}
+    .details{font-size:8.5px;line-height:1.35;padding:4px 8px;margin-top:4px;min-height:0;}
+    .details .dtitle{font-size:8.5px;margin-bottom:0;}
+    .header{padding:4px 0 4px;min-height:0;}
+    .brand{width:auto;margin-left:0;}
+    .brand img{height:32px;margin-bottom:2px;}
+    .brand-ar{font-size:14px;line-height:1.1;}
+    .brand-en{font-size:8px;margin-top:0;}
+    .brand-sub{font-size:9px;padding-top:2px;margin-top:2px;}
     .donut,.iconbadge,.section-title [contenteditable]{
       -webkit-print-color-adjust:exact !important;
       print-color-adjust:exact !important;
