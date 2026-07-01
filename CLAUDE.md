@@ -1,6 +1,7 @@
 # Blood Bank Dammam — Year-over-Year Report
 
-A single self-contained HTML file (`blood_bank_yoy_report.html`) that renders an
+A single self-contained HTML file (`index.html`, originally
+`blood_bank_yoy_report.html`) that renders an
 editable, printable year-over-year statistics report for the **Central Blood
 Bank, Dammam** (Saudi Ministry of Health). No build step, no backend, no
 package manager — open the file directly in a browser.
@@ -9,6 +10,10 @@ This is a separate project from the "blood-bank-inventory" app in
 `~/Downloads/index.html` — that one tracks day-to-day inventory with an
 in-app user guide; this one is a static-ish YoY statistics report with no
 GUIDE array.
+
+Deployed via GitHub Pages from `main`/root at
+https://agoulh.github.io/blood-bank-report/ (repo is public so free-plan
+Pages can serve it).
 
 ## What it shows
 
@@ -32,7 +37,7 @@ three, an increase is "good". Each section also has a 4-quadrant "wheel"
 donut (editable center label, defaults to a quarter like `Q1`) and an "RH
 Details" line for O-negative count.
 
-## Structure of `blood_bank_yoy_report.html`
+## Structure of `index.html`
 
 - `<style>` — all CSS, CSS custom properties for the color palette at the top (`:root`)
 - `<div class="header">` — MOH logo (inline base64 PNG) + Arabic/English branding
