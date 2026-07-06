@@ -3,8 +3,10 @@
 A single self-contained HTML file (`index.html`, originally
 `blood_bank_yoy_report.html`) that renders an
 editable, printable year-over-year statistics report for the **Central Blood
-Bank, Dammam** (Saudi Ministry of Health). No build step, no backend, no
-package manager — open the file directly in a browser.
+Bank, Dammam** (Saudi Ministry of Health). No build step, no package manager
+— open the file directly in a browser. It does talk to one external
+service (Firestore, see "Cross-browser sync" below) for live data sync, but
+there's still no custom backend/server code of our own.
 
 This is a separate project from the "blood-bank-inventory" app in
 `~/Downloads/index.html` — that one tracks day-to-day inventory with an
@@ -59,10 +61,11 @@ Details" line for O-negative count.
   - `attachListeners()` — wires `blur`/`Enter` on every `[contenteditable]` to re-read, recalc, persist
   - `readDOMIntoData()` — reverse-syncs edited DOM values back into `DATA`
   - `recalcAll()` — recomputes WASTE totals, all percentages, donut fills, and trend arrows; the only place derived values are computed
-  - `persist()` / `saveData()` / `resetData()` — localStorage read/write and the "Reset to original" flow
+  - `persist()` / `saveData()` / `resetData()` — localStorage + Firestore write, and the
+    "Reset to original" flow
   - `exportData()` / `importData(event)` — download `DATA` as a JSON file, or load one back
-    in (after a shape check and a confirm), so edits can be carried between browsers/devices
-    since `localStorage` never syncs on its own
+    in (after a shape check and a confirm); a manual/offline fallback for moving data around
+    now that Firestore sync (below) handles the common case automatically
   - `flash(msg)` — briefly swaps the toolbar hint text (e.g. "Saved ✓") after Save/Reset
 
 ## Editing model
@@ -71,15 +74,38 @@ Every number and label in the report is a `contenteditable` span/text node
 (`data-field`, `data-metric`, `data-k`, `data-wheel-label`, `data-wheel-center`
 attributes identify what each element maps to). On blur, `readDOMIntoData()`
 pulls the edited DOM back into `DATA`, `recalcAll()` recomputes everything
-derived, and `persist()` saves to localStorage. Nothing is sent to a server —
-all state lives in the browser (`localStorage`) until "Reset to original" is
-clicked, which restores `ORIGINAL` and clears the stored key.
+derived, and `persist()` saves the result.
 
-`localStorage` is per-browser/per-device and never syncs on its own. To move
-edits between browsers or machines, use the toolbar's Export button (downloads
-the current `DATA` as a timestamped JSON file) and Import button (loads a
-previously exported JSON file back into `DATA`, after a shape check and a
-confirm, replacing whatever is currently loaded).
+## Cross-browser sync (Firestore)
+
+`localStorage` alone is per-browser/per-device and never syncs on its own —
+edits made in one browser were invisible everywhere else. `index.html` now
+also loads the Firebase compat SDK (`firebase-app-compat.js` +
+`firebase-firestore-compat.js`, via `<script src>` from the `gstatic.com` CDN
+— the one external dependency this file has) and mirrors `DATA` to a single
+Firestore document:
+
+- Project: `lab-analytics-555c7` (Google Firebase, free tier), document path
+  `bloodbank_yoy_report/data`.
+- `persist()` writes to both `localStorage` (instant local cache) and that
+  Firestore document (`remoteDoc.set(DATA)`), fire-and-forget.
+- An `onSnapshot` listener on `remoteDoc` (set up right after `DATA` is first
+  loaded) pushes any remote change into `DATA` + `render()` in real time —
+  this is what makes edits show up automatically in every other open browser,
+  no manual export/import needed for the common case. It skips snapshots
+  where `metadata.hasPendingWrites` is true, so a browser doesn't re-render
+  its own just-written change as if it came from elsewhere.
+- `resetData()` calls `persist()` too, so "Reset to original" also propagates
+  to every other browser instead of only resetting the local one.
+- Firestore security rules are wide open (`allow read, write: if true`) —
+  there's no auth. The `apiKey` in `firebaseConfig` is not a secret (Firebase
+  web API keys are meant to be public; access control lives in the rules,
+  not the key), but be aware anyone with the page's source can read/write
+  this document directly, bypassing the UI entirely. Acceptable for this
+  low-stakes internal report; revisit if that assumption ever stops holding.
+- Export/Import (previous section) still exist as a manual/offline fallback
+  — e.g. taking a point-in-time backup, or moving data somewhere with no
+  network access to Firestore.
 
 ## Print layout
 

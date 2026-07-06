@@ -181,6 +181,8 @@
   <div class="print-signature" style="display:none;">done bye : Hasan Alagoul</div>
 </div>
 
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
 <script>
 const ORIGINAL = {"sections": [{"name": "BLOOD BANK CENTER", "years": {"2024": {"metrics": {"WASTE": 37, "RHNEG": 119, "FEMALE": 51, "DONOR": 1297}, "waste": {"QNS": 16, "Airinfusion": 0, "Dammaged": 3, "Clotted": 11, "OverVolume": 7}, "rhoneg": 68}, "2025": {"metrics": {"WASTE": 49, "RHNEG": 179, "FEMALE": 52, "DONOR": 1191}, "waste": {"QNS": 18, "Airinfusion": 12, "Dammaged": 1, "Clotted": 17, "OverVolume": 1}, "rhoneg": 116}}}, {"name": "DAMY", "years": {"2024": {"metrics": {"WASTE": 24, "RHNEG": 56, "FEMALE": 28, "DONOR": 551}, "waste": {"QNS": 16, "Airinfusion": 1, "Dammaged": 0, "Clotted": 7, "OverVolume": 0}, "rhoneg": 20}, "2025": {"metrics": {"WASTE": 20, "RHNEG": 55, "FEMALE": 40, "DONOR": 560}, "waste": {"QNS": 10, "Airinfusion": 1, "Dammaged": 0, "Clotted": 7, "OverVolume": 0}, "rhoneg": 122}}}, {"name": "MOBILE", "years": {"2024": {"metrics": {"WASTE": 108, "RHNEG": 191, "FEMALE": 198, "DONOR": 2732}, "waste": {"QNS": 57, "Airinfusion": 1, "Dammaged": 0, "Clotted": 30, "OverVolume": 20}, "rhoneg": 99}, "2025": {"metrics": {"WASTE": 173, "RHNEG": 240, "FEMALE": 210, "DONOR": 2925}, "waste": {"QNS": 134, "Airinfusion": 0, "Dammaged": 1, "Clotted": 27, "OverVolume": 1}, "rhoneg": 29}}}]};
 const STORE_KEY = "bloodbank_yoy_report_v3";
@@ -223,6 +225,27 @@ function loadData(){
   return JSON.parse(JSON.stringify(ORIGINAL));
 }
 let DATA = loadData();
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBZcxkJmfeJQWdco2RN571VljZhjxIRmOQ",
+  authDomain: "lab-analytics-555c7.firebaseapp.com",
+  projectId: "lab-analytics-555c7",
+  storageBucket: "lab-analytics-555c7.firebasestorage.app",
+  messagingSenderId: "398123072045",
+  appId: "1:398123072045:web:ff560850c33fd9b51616a4"
+};
+firebase.initializeApp(firebaseConfig);
+const remoteDoc = firebase.firestore().collection('bloodbank_yoy_report').doc('data');
+
+remoteDoc.onSnapshot(snap=>{
+  if(snap.metadata.hasPendingWrites) return; // echo of our own write, already applied locally
+  if(!snap.exists) return;
+  const remote = snap.data();
+  if(JSON.stringify(remote) === JSON.stringify(DATA)) return;
+  DATA = remote;
+  localStorage.setItem(STORE_KEY, JSON.stringify(DATA));
+  render();
+}, err=>console.error('Firestore sync (read) failed:', err));
 
 function donutHTML(metric){
   return `<div class="donutcell"><div class="donut" data-metric="${metric}">
@@ -437,13 +460,16 @@ function recalcAll(doPersist=true){
   if(doPersist) persist();
 }
 
-function persist(){ localStorage.setItem(STORE_KEY, JSON.stringify(DATA)); }
+function persist(){
+  localStorage.setItem(STORE_KEY, JSON.stringify(DATA));
+  remoteDoc.set(DATA).catch(err=>console.error('Firestore sync (write) failed:', err));
+}
 
 function saveData(){ readDOMIntoData(); recalcAll(); persist(); flash('Saved ✓'); }
 function resetData(){
   if(!confirm('Reset all values back to the original report? This discards your edits.')) return;
   DATA = JSON.parse(JSON.stringify(ORIGINAL));
-  localStorage.removeItem(STORE_KEY);
+  persist();
   render();
   flash('Reset to original');
 }
