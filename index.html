@@ -169,6 +169,9 @@
     <button onclick="saveData()">💾 Save</button>
     <button onclick="resetData()" class="danger">⟲ Reset to original</button>
     <button onclick="window.print()">🖨 Print / PDF</button>
+    <button onclick="exportData()">⭳ Export</button>
+    <button onclick="document.getElementById('importFile').click()">⭱ Import</button>
+    <input type="file" id="importFile" accept="application/json" style="display:none" onchange="importData(event)">
     <div class="hint">Click any number or label to edit it. Percentages, trend arrows and waste totals update automatically.</div>
   </div>
 
@@ -449,6 +452,37 @@ function flash(msg){
   const old = hint.textContent;
   hint.textContent = msg; hint.style.color = '#00754A';
   setTimeout(()=>{ hint.textContent = old; hint.style.color=''; }, 1400);
+}
+
+function exportData(){
+  readDOMIntoData();
+  const blob = new Blob([JSON.stringify(DATA, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `blood_bank_yoy_report_${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  flash('Exported ✓');
+}
+
+function importData(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    event.target.value = '';
+    let parsed;
+    try{ parsed = JSON.parse(reader.result); }
+    catch(e){ alert('This file is not valid JSON.'); return; }
+    if(!parsed || !Array.isArray(parsed.sections)){ alert('This file does not look like a report export.'); return; }
+    if(!confirm('Import this file? This replaces all current values.')) return;
+    DATA = parsed;
+    persist();
+    render();
+    flash('Imported ✓');
+  };
+  reader.readAsText(file);
 }
 
 render();

@@ -41,7 +41,8 @@ Details" line for O-negative count.
 
 - `<style>` — all CSS, CSS custom properties for the color palette at the top (`:root`)
 - `<div class="header">` — MOH logo (inline base64 PNG) + Arabic/English branding
-- `<div class="toolbar">` — Recalculate / Save / Reset to original / Print-PDF buttons
+- `<div class="toolbar">` — Recalculate / Save / Reset to original / Print-PDF /
+  Export / Import buttons
 - `<div id="sections">` — populated at runtime by `render()`
 - `<div class="autosave-note">` — "edits are saved automatically" note; hidden in print
 - `<div class="print-signature">` — signature line ("done bye : Hasan Alagoul");
@@ -59,6 +60,9 @@ Details" line for O-negative count.
   - `readDOMIntoData()` — reverse-syncs edited DOM values back into `DATA`
   - `recalcAll()` — recomputes WASTE totals, all percentages, donut fills, and trend arrows; the only place derived values are computed
   - `persist()` / `saveData()` / `resetData()` — localStorage read/write and the "Reset to original" flow
+  - `exportData()` / `importData(event)` — download `DATA` as a JSON file, or load one back
+    in (after a shape check and a confirm), so edits can be carried between browsers/devices
+    since `localStorage` never syncs on its own
   - `flash(msg)` — briefly swaps the toolbar hint text (e.g. "Saved ✓") after Save/Reset
 
 ## Editing model
@@ -70,6 +74,12 @@ pulls the edited DOM back into `DATA`, `recalcAll()` recomputes everything
 derived, and `persist()` saves to localStorage. Nothing is sent to a server —
 all state lives in the browser (`localStorage`) until "Reset to original" is
 clicked, which restores `ORIGINAL` and clears the stored key.
+
+`localStorage` is per-browser/per-device and never syncs on its own. To move
+edits between browsers or machines, use the toolbar's Export button (downloads
+the current `DATA` as a timestamped JSON file) and Import button (loads a
+previously exported JSON file back into `DATA`, after a shape check and a
+confirm, replacing whatever is currently loaded).
 
 ## Print layout
 
