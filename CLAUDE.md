@@ -43,18 +43,23 @@ Details" line for O-negative count.
 - `<div class="header">` — MOH logo (inline base64 PNG) + Arabic/English branding
 - `<div class="toolbar">` — Recalculate / Save / Reset to original / Print-PDF buttons
 - `<div id="sections">` — populated at runtime by `render()`
+- `<div class="autosave-note">` — "edits are saved automatically" note; hidden in print
+- `<div class="print-signature">` — signature line ("done bye : Hasan Alagoul");
+  `display:none` on screen, forced `display:block` only inside `@media print`
 - `<script>` — all app logic, no external JS dependencies:
   - `ORIGINAL` — the baked-in seed dataset (source of truth for "Reset to original")
   - `STORE_KEY = "bloodbank_yoy_report_v3"` — localStorage key holding live edits
   - `DATA` — the working copy loaded from localStorage (or cloned from `ORIGINAL`)
-  - `ICONS`, `LABELS`, `COLORS`, `METRIC_KEYS`, `WHEEL_QUADS` — static config for the 4 metrics
+  - `ICONS`, `LABELS`, `COLORS`, `METRIC_KEYS`, `WHEEL_QUADS`, `WHEEL_DEFAULT_LABELS` — static config for the 4 metrics
   - `render()` — builds the DOM for all sections from `DATA`
   - `yearColHTML()` — builds one year's column (donuts, arrows, icons, values, waste/RH details)
-  - `wheelSVG(sec)` — draws the 4-quadrant wheel per section
+  - `wheelSVG(sec)` — draws the 4-quadrant wheel per section; each quadrant's text label
+    is also `contenteditable` (`data-wheel-label`) and syncs back to `sec.wheelLabels`
   - `attachListeners()` — wires `blur`/`Enter` on every `[contenteditable]` to re-read, recalc, persist
   - `readDOMIntoData()` — reverse-syncs edited DOM values back into `DATA`
   - `recalcAll()` — recomputes WASTE totals, all percentages, donut fills, and trend arrows; the only place derived values are computed
   - `persist()` / `saveData()` / `resetData()` — localStorage read/write and the "Reset to original" flow
+  - `flash(msg)` — briefly swaps the toolbar hint text (e.g. "Saved ✓") after Save/Reset
 
 ## Editing model
 
@@ -65,6 +70,18 @@ pulls the edited DOM back into `DATA`, `recalcAll()` recomputes everything
 derived, and `persist()` saves to localStorage. Nothing is sent to a server —
 all state lives in the browser (`localStorage`) until "Reset to original" is
 clicked, which restores `ORIGINAL` and clears the stored key.
+
+## Print layout
+
+`@media print` has its own compressed CSS (smaller donuts/icons/fonts, tighter
+section padding, `.toolbar` and `.autosave-note` hidden) so the full report —
+all three sections, both years — fits a single printed page, plus a forced-visible
+signature line at the bottom. This block has been iterated on repeatedly and is
+fragile: the `@media (max-width:760px)` mobile breakpoint can interact badly
+with print pagination (a browser printing at a narrow viewport width picks up
+mobile rules too), so mobile and print rules should be checked together, not
+assumed independent. When touching print CSS, verify with an actual print
+preview, not just by reading the rules.
 
 ## Working on this file
 
