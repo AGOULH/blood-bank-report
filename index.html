@@ -415,8 +415,14 @@ function recalcAll(doPersist=true){
       const [y1,y2] = yearKeys;
       const col2 = cols[1];
       METRIC_KEYS.forEach(mk=>{
-        const p1 = pctByYear[y1][mk], p2 = pctByYear[y2][mk];
-        const up = p2 >= p1;
+        let up;
+        if(mk === 'DONOR'){
+          const v1 = num(sec.years[y1].metrics.DONOR), v2 = num(sec.years[y2].metrics.DONOR);
+          up = v2 >= v1;
+        } else {
+          const p1 = pctByYear[y1][mk], p2 = pctByYear[y2][mk];
+          up = p2 >= p1;
+        }
         const goodDirection = (mk === 'WASTE') ? !up : up;
         const arrow = col2.querySelector(`.arrow[data-metric="${mk}"]`);
         arrow.textContent = up ? '▲' : '▼';
