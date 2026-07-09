@@ -3,13 +3,15 @@
 A single self-contained HTML file (`index.html`, originally
 `blood_bank_yoy_report.html`) that renders an
 editable, printable year-over-year statistics report for the **Central Blood
-Bank, Dammam** (Saudi Ministry of Health). No build step, no package manager,
-no external services — open the file directly in a browser. Everything is
-local: the entry form starts blank every time it's opened (see "Editing
-model" below), and anything the user chooses to keep lives only in that
-browser's `localStorage` (see "Saved reports" below). PDF export is just the
-browser's native print-to-PDF via the "Print / PDF" button (`window.print()`)
-— deliberately not auto-generated (see "Working on this file" for why).
+Bank, Dammam** (Saudi Ministry of Health). No build step, no package manager
+— open the file directly in a browser. It does talk to one external service
+(Firestore, see "Saved reports" below) so saved reports show up the same in
+any browser/device, but there's still no custom backend/server code of our
+own. The entry form itself starts blank every time it's opened (see "Editing
+model" below) and is never auto-saved — only an explicit "Save Report" press
+persists anything. PDF export is just the browser's native print-to-PDF via
+the "Print / PDF" button (`window.print()`) — deliberately not auto-generated
+(see "Working on this file" for why).
 
 This is a separate project from the "blood-bank-inventory" app in
 `~/Downloads/index.html` — that one tracks day-to-day inventory with an
@@ -59,12 +61,16 @@ Details" line for O-negative count.
 - `<div class="autosave-note">` — reminds the user nothing is saved automatically; hidden in print
 - `<div class="print-signature">` — signature line ("done bye : Hasan Alagoul");
   `display:none` on screen, forced `display:block` only inside `@media print`
-- `<script>` — all app logic, no external JS dependencies:
+- `<script src=".../firebase-app-compat.js">` / `<script src=".../firebase-firestore-compat.js">`
+  — the two external dependencies (CDN, gstatic.com), for the saved-reports Firestore sync
+- `<script>` — all app logic:
   - `blankYear()` / `BLANK` — the all-zero starting template (source of truth for
     both the initial `DATA` and "Clear All"); section names (`BLOOD BANK CENTER`,
     `DAMY`, `MOBILE`) and year labels (`2024`/`2025`) are pre-filled, all numbers are `0`
-  - `REPORTS_KEY = "bloodbank_yoy_reports_v1"` — localStorage key holding the array
-    of saved-report snapshots (see "Saved reports" below)
+  - `firebaseConfig` / `reportsCol` — Firestore collection `bloodbank_yoy_reports`
+    that backs the saved-report history (see "Saved reports" below)
+  - `reportsCache` — local in-memory mirror of that collection, kept live by an
+    `onSnapshot` listener set up right after `reportsCol` is created
   - `DATA` — the working copy for the entry view; always starts as a fresh clone of
     `BLANK` on page load — nothing restores it from storage automatically
   - `ICONS`, `LABELS`, `COLORS`, `METRIC_KEYS`, `WHEEL_QUADS`, `WHEEL_DEFAULT_LABELS` — static config for the 4 metrics
@@ -75,11 +81,12 @@ Details" line for O-negative count.
   - `attachListeners()` — wires `blur`/`Enter` on every `[contenteditable]` to re-read and recalc
   - `readDOMIntoData()` — reverse-syncs edited DOM values back into `DATA`
   - `recalcAll()` — recomputes WASTE totals, all percentages, donut fills, and trend arrows; the only place derived values are computed. Purely in-memory/DOM — no storage side effect.
-  - `saveReport()` / `clearAll()` — snapshot the current entry into saved-report
-    history, and wipe the entry view back to `BLANK`, respectively
-  - `loadReports()` / `saveReports(list)` / `renderSavedList()` / `openReport(id)` /
-    `deleteReport(id)` — read/write the saved-report history and render/act on
-    `#savedReportsView`'s list
+  - `saveReport()` / `clearAll()` — snapshot the current entry into Firestore's
+    saved-report history, and wipe the entry view back to `BLANK`, respectively
+  - `renderSavedList()` / `openReport(id)` / `deleteReport(id)` — render
+    `reportsCache` into `#savedReportsView`'s list, and act on one entry
+    (Firestore doc IDs are strings — don't drop the quotes in the generated
+    `onclick="openReport('${r.id}')"` handlers)
   - `showSavedView()` / `showEntryView()` — toggle which of `#sections` /
     `#savedReportsView` (and the toolbar) is visible
   - `exportData()` / `importData(event)` — download the current on-screen `DATA` as
@@ -97,36 +104,49 @@ derived — nothing is written to storage at this point. Reloading the page (or
 just navigating away) silently discards whatever's on screen unless the user
 explicitly pressed "Save Report" first. This is intentional: the report is
 meant to be a disposable scratch form, not a document that auto-persists
-edits in the background (that used to sync live across browsers via
-Firestore; that mechanism was deliberately removed — data storage is now
-purely local/per-browser via `localStorage`, no server or account involved).
+edits in the background. (An earlier version synced every keystroke live
+across browsers via Firestore — that's gone; only an explicit "Save Report"
+writes anywhere now, and only a full snapshot, never individual edits.)
 
 The WASTE number under each donut is display-only (no `contenteditable`,
 just a `title` tooltip) because `recalcAll()` always overwrites it with the
 sum of the 5 waste sub-reason fields below it — it must never carry its own
 `contenteditable`, or edits to it get silently discarded on blur.
 
-## Saved reports (localStorage)
+## Saved reports (Firestore)
 
-"Save Report" doesn't overwrite anything and doesn't sync anywhere — it
-appends a timestamped, deep-cloned snapshot of the current `DATA` to a list
-in `localStorage` under `REPORTS_KEY`. That list is what backs the
-`#savedReportsView` second page:
+"Save Report" doesn't overwrite anything — it adds a new document to the
+`bloodbank_yoy_reports` Firestore collection (project `lab-analytics-555c7`,
+same free-tier project the old live-sync used), each holding a full
+`{savedAt, data}` snapshot. Every open browser/device sees the same list,
+live, because of the collection-wide `onSnapshot` listener set up at load
+(`reportsCol.orderBy('savedAt','desc').onSnapshot(...)` → `reportsCache` →
+`renderSavedList()`) — no manual refresh needed, a save in one tab shows up
+in another automatically. This is deliberately scoped to *only* the saved-report
+history; the live entry form (`DATA`) stays local/blank-on-load, as decided
+in "Editing model" above — don't wire Firestore back into the typing/blur
+path, that's the live-sync behavior that was intentionally removed.
 
-- `saveReport()` reads the DOM, recalculates, then unshifts
-  `{id, savedAt, data}` onto the list and writes it back — it does **not**
-  clear or otherwise touch the live entry view.
-- `showSavedView()` hides `#sections`/the toolbar and renders the list
-  (newest first) via `renderSavedList()`; each row has **Open** and **Delete**.
-- `openReport(id)` replaces `DATA` with a clone of that snapshot, re-renders,
-  and switches back to the entry view — from there it's fully editable again,
-  and pressing "Save Report" again creates a *new* history entry rather than
-  overwriting the one just opened.
-- `deleteReport(id)` removes one entry from the list (with a confirm).
-- This history is per-browser only (plain `localStorage`, no server). Export/
-  Import (see above) are the way to move a report's data to another machine
-  or take an out-of-browser backup — the saved-reports list itself doesn't
-  travel with the file.
+- `saveReport()` reads the DOM, recalculates, then `reportsCol.add({savedAt,
+  data})` — Firestore assigns the doc ID; on failure it alerts the user
+  rather than silently losing the save (data loss here is a real risk since
+  there's no local fallback copy).
+- `showSavedView()` hides `#sections`/the toolbar and calls `renderSavedList()`
+  (it's usually already fresh from the live listener, this just guarantees
+  it); each row has **Open** and **Delete**.
+- `openReport(id)` finds the doc in `reportsCache`, clones its `data` into
+  `DATA`, re-renders, and switches back to the entry view — from there it's
+  fully editable again, and pressing "Save Report" again creates a *new*
+  document rather than overwriting the one just opened.
+- `deleteReport(id)` deletes that one Firestore doc (with a confirm); the
+  list updates via the live listener, no manual re-render needed.
+- Firestore security rules are wide open (`allow read, write: if true`) —
+  same as the old live-sync setup, no auth. Acceptable for this low-stakes
+  internal tool; anyone with the page source can read/write the collection
+  directly, bypassing the UI.
+- Export/Import (above) still exist as a manual/offline fallback — e.g. an
+  out-of-browser backup, or moving one report's data somewhere with no
+  network access to Firestore.
 
 ## Print layout
 

@@ -207,6 +207,8 @@
   <div class="print-signature" style="display:none;">done bye : Hasan Alagoul</div>
 </div>
 
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
 <script>
 function blankYear(){ return {metrics:{WASTE:0,RHNEG:0,FEMALE:0,DONOR:0}, waste:{QNS:0,Airinfusion:0,Dammaged:0,Clotted:0,OverVolume:0}, rhoneg:0}; }
 const BLANK = {"sections": [
@@ -214,7 +216,25 @@ const BLANK = {"sections": [
   {"name":"DAMY","years":{"2024":blankYear(),"2025":blankYear()}},
   {"name":"MOBILE","years":{"2024":blankYear(),"2025":blankYear()}}
 ]};
-const REPORTS_KEY = "bloodbank_yoy_reports_v1";
+
+// Saved-report history lives in Firestore (not localStorage) so it's the same
+// list from any browser/device — only the live entry form (DATA, below) stays
+// private/local/blank-on-load.
+const firebaseConfig = {
+  apiKey: "AIzaSyBZcxkJmfeJQWdco2RN571VljZhjxIRmOQ",
+  authDomain: "lab-analytics-555c7.firebaseapp.com",
+  projectId: "lab-analytics-555c7",
+  storageBucket: "lab-analytics-555c7.firebasestorage.app",
+  messagingSenderId: "398123072045",
+  appId: "1:398123072045:web:ff560850c33fd9b51616a4"
+};
+firebase.initializeApp(firebaseConfig);
+const reportsCol = firebase.firestore().collection('bloodbank_yoy_reports');
+let reportsCache = [];
+reportsCol.orderBy('savedAt', 'desc').onSnapshot(snap=>{
+  reportsCache = snap.docs.map(d=>({ id: d.id, ...d.data() }));
+  renderSavedList();
+}, err=>console.error('Saved-reports sync failed:', err));
 
 /* ---- refined, clearer flat icon set ---- */
 const ICONS = {
@@ -248,12 +268,6 @@ const WHEEL_QUADS = [
 const WHEEL_DEFAULT_LABELS = {DONOR:"DONOR", FEMALE:"FEMALE", RHNEG:"RH NEG", WASTE:"WASTE"};
 
 function num(v){ const n = parseFloat(String(v).replace(/[^\d.\-]/g,'')); return isNaN(n)?0:n; }
-
-function loadReports(){
-  try{ const raw = localStorage.getItem(REPORTS_KEY); if(raw) return JSON.parse(raw); }catch(e){}
-  return [];
-}
-function saveReports(list){ localStorage.setItem(REPORTS_KEY, JSON.stringify(list)); }
 
 let DATA = JSON.parse(JSON.stringify(BLANK));
 
@@ -471,10 +485,9 @@ function recalcAll(){
 function saveReport(){
   readDOMIntoData();
   recalcAll();
-  const list = loadReports();
-  list.unshift({ id: Date.now(), savedAt: new Date().toISOString(), data: JSON.parse(JSON.stringify(DATA)) });
-  saveReports(list);
-  flash('Saved ✓');
+  reportsCol.add({ savedAt: new Date().toISOString(), data: JSON.parse(JSON.stringify(DATA)) })
+    .then(()=>flash('Saved ✓'))
+    .catch(err=>{ console.error('Save failed:', err); alert('Could not save — check your internet connection and try again.'); });
 }
 function clearAll(){
   if(!confirm('Clear all entered numbers? Nothing is auto-saved, so this cannot be undone (unless you already pressed "Save Report").')) return;
@@ -485,25 +498,25 @@ function clearAll(){
 
 function renderSavedList(){
   const wrap = document.getElementById('savedReportsList');
-  const list = loadReports();
-  if(!list.length){
+  if(!wrap) return; // not yet rendered on first Firestore callback tick
+  if(!reportsCache.length){
     wrap.innerHTML = '<div class="saved-empty">No saved reports yet. Enter numbers, then press "Save Report".</div>';
     return;
   }
-  wrap.innerHTML = list.map(r=>{
+  wrap.innerHTML = reportsCache.map(r=>{
     const when = new Date(r.savedAt).toLocaleString();
     return `<div class="saved-item">
       <span class="when">${when}</span>
       <span class="actions">
-        <button onclick="openReport(${r.id})">Open</button>
-        <button class="danger" onclick="deleteReport(${r.id})">Delete</button>
+        <button onclick="openReport('${r.id}')">Open</button>
+        <button class="danger" onclick="deleteReport('${r.id}')">Delete</button>
       </span>
     </div>`;
   }).join('');
 }
 
 function openReport(id){
-  const entry = loadReports().find(r=>r.id===id);
+  const entry = reportsCache.find(r=>r.id===id);
   if(!entry) return;
   DATA = JSON.parse(JSON.stringify(entry.data));
   render();
@@ -513,9 +526,7 @@ function openReport(id){
 
 function deleteReport(id){
   if(!confirm('Delete this saved report? This cannot be undone.')) return;
-  saveReports(loadReports().filter(r=>r.id!==id));
-  renderSavedList();
-  flash('Deleted');
+  reportsCol.doc(id).delete().catch(err=>console.error('Delete failed:', err));
 }
 
 function showSavedView(){
