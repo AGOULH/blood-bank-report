@@ -288,7 +288,7 @@ function yearColHTML(){
       <div class="metricblock">${METRIC_KEYS.map(mk=>`
         <div class="metriccell">
           <div class="metriclabel">${LABELS[mk]}</div>
-          <div class="metricval"><span contenteditable="true" data-field="mval" data-metric="${mk}">0</span></div>
+          <div class="metricval"><span${mk==='WASTE' ? ' title="Sum of the 5 waste reasons below — edit those instead"' : ' contenteditable="true"'} data-field="mval" data-metric="${mk}">0</span></div>
         </div>`).join('')}</div>
       <div class="details">
         <div class="dtitle">Waste Details</div>
