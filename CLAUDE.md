@@ -3,10 +3,11 @@
 A single self-contained HTML file (`index.html`, originally
 `blood_bank_yoy_report.html`) that renders an
 editable, printable year-over-year statistics report for the **Central Blood
-Bank, Dammam** (Saudi Ministry of Health). No build step, no package manager
-— open the file directly in a browser. It does talk to one external
-service (Firestore, see "Cross-browser sync" below) for live data sync, but
-there's still no custom backend/server code of our own.
+Bank, Dammam** (Saudi Ministry of Health). No build step, no package manager,
+no external services — open the file directly in a browser. Everything is
+local: the entry form starts blank every time it's opened (see "Editing
+model" below), and anything the user chooses to keep lives only in that
+browser's `localStorage` (see "Saved reports" below).
 
 This is a separate project from the "blood-bank-inventory" app in
 `~/Downloads/index.html` — that one tracks day-to-day inventory with an
@@ -19,7 +20,11 @@ Pages can serve it).
 
 ## What it shows
 
-Three organizational sections (`BLOOD BANK CENTER`, `DAMY`, `MOBILE`), each
+The report is a blank data-entry form: every field starts at `0`/empty on
+load, the user types in raw counts for the two years, and every percentage,
+donut, and trend arrow is computed live from what's typed — no numbers are
+baked into the file. Three organizational sections (`BLOOD BANK CENTER`,
+`DAMY`, `MOBILE`), each
 comparing two years (2024 vs 2025) side by side across four metrics:
 
 - **DONOR** — total donor count
@@ -43,81 +48,97 @@ Details" line for O-negative count.
 
 - `<style>` — all CSS, CSS custom properties for the color palette at the top (`:root`)
 - `<div class="header">` — MOH logo (inline base64 PNG) + Arabic/English branding
-- `<div class="toolbar">` — Recalculate / Save / Reset to original / Print-PDF /
-  Export / Import buttons
-- `<div id="sections">` — populated at runtime by `render()`
-- `<div class="autosave-note">` — "edits are saved automatically" note; hidden in print
+- `<div class="toolbar">` — Recalculate / Save Report / Clear All / Print-PDF /
+  Export / Import / Saved Reports buttons
+- `<div id="sections">` — the entry view; populated at runtime by `render()`
+- `<div id="savedReportsView">` — the second "page": a list of previously-saved
+  report snapshots, toggled with `#sections` by `showSavedView()` / `showEntryView()`
+  (both live in the same `index.html`, not separate files — see "Working on this file")
+- `<div class="autosave-note">` — reminds the user nothing is saved automatically; hidden in print
 - `<div class="print-signature">` — signature line ("done bye : Hasan Alagoul");
   `display:none` on screen, forced `display:block` only inside `@media print`
 - `<script>` — all app logic, no external JS dependencies:
-  - `ORIGINAL` — the baked-in seed dataset (source of truth for "Reset to original")
-  - `STORE_KEY = "bloodbank_yoy_report_v3"` — localStorage key holding live edits
-  - `DATA` — the working copy loaded from localStorage (or cloned from `ORIGINAL`)
+  - `blankYear()` / `BLANK` — the all-zero starting template (source of truth for
+    both the initial `DATA` and "Clear All"); section names (`BLOOD BANK CENTER`,
+    `DAMY`, `MOBILE`) and year labels (`2024`/`2025`) are pre-filled, all numbers are `0`
+  - `REPORTS_KEY = "bloodbank_yoy_reports_v1"` — localStorage key holding the array
+    of saved-report snapshots (see "Saved reports" below)
+  - `DATA` — the working copy for the entry view; always starts as a fresh clone of
+    `BLANK` on page load — nothing restores it from storage automatically
   - `ICONS`, `LABELS`, `COLORS`, `METRIC_KEYS`, `WHEEL_QUADS`, `WHEEL_DEFAULT_LABELS` — static config for the 4 metrics
   - `render()` — builds the DOM for all sections from `DATA`
   - `yearColHTML()` — builds one year's column (donuts, arrows, icons, values, waste/RH details)
   - `wheelSVG(sec)` — draws the 4-quadrant wheel per section; each quadrant's text label
     is also `contenteditable` (`data-wheel-label`) and syncs back to `sec.wheelLabels`
-  - `attachListeners()` — wires `blur`/`Enter` on every `[contenteditable]` to re-read, recalc, persist
+  - `attachListeners()` — wires `blur`/`Enter` on every `[contenteditable]` to re-read and recalc
   - `readDOMIntoData()` — reverse-syncs edited DOM values back into `DATA`
-  - `recalcAll()` — recomputes WASTE totals, all percentages, donut fills, and trend arrows; the only place derived values are computed
-  - `persist()` / `saveData()` / `resetData()` — localStorage + Firestore write, and the
-    "Reset to original" flow
-  - `exportData()` / `importData(event)` — download `DATA` as a JSON file, or load one back
-    in (after a shape check and a confirm); a manual/offline fallback for moving data around
-    now that Firestore sync (below) handles the common case automatically
-  - `flash(msg)` — briefly swaps the toolbar hint text (e.g. "Saved ✓") after Save/Reset
+  - `recalcAll()` — recomputes WASTE totals, all percentages, donut fills, and trend arrows; the only place derived values are computed. Purely in-memory/DOM — no storage side effect.
+  - `saveReport()` / `clearAll()` — snapshot the current entry into saved-report
+    history, and wipe the entry view back to `BLANK`, respectively
+  - `loadReports()` / `saveReports(list)` / `renderSavedList()` / `openReport(id)` /
+    `deleteReport(id)` — read/write the saved-report history and render/act on
+    `#savedReportsView`'s list
+  - `showSavedView()` / `showEntryView()` — toggle which of `#sections` /
+    `#savedReportsView` (and the toolbar) is visible
+  - `exportData()` / `importData(event)` — download the current on-screen `DATA` as
+    a JSON file, or load one back in (after a shape check and a confirm); a manual
+    backup/restore path independent of the saved-reports history
+  - `flash(msg)` — briefly swaps the toolbar hint text (e.g. "Saved ✓") after an action
 
 ## Editing model
 
 Every number and label in the report is a `contenteditable` span/text node
 (`data-field`, `data-metric`, `data-k`, `data-wheel-label`, `data-wheel-center`
 attributes identify what each element maps to). On blur, `readDOMIntoData()`
-pulls the edited DOM back into `DATA`, `recalcAll()` recomputes everything
-derived, and `persist()` saves the result.
+pulls the edited DOM back into `DATA` and `recalcAll()` recomputes everything
+derived — nothing is written to storage at this point. Reloading the page (or
+just navigating away) silently discards whatever's on screen unless the user
+explicitly pressed "Save Report" first. This is intentional: the report is
+meant to be a disposable scratch form, not a document that auto-persists
+edits in the background (that used to sync live across browsers via
+Firestore; that mechanism was deliberately removed — this is now a purely
+local, per-browser tool with no external dependency).
 
-## Cross-browser sync (Firestore)
+The WASTE number under each donut is display-only (no `contenteditable`,
+just a `title` tooltip) because `recalcAll()` always overwrites it with the
+sum of the 5 waste sub-reason fields below it — it must never carry its own
+`contenteditable`, or edits to it get silently discarded on blur.
 
-`localStorage` alone is per-browser/per-device and never syncs on its own —
-edits made in one browser were invisible everywhere else. `index.html` now
-also loads the Firebase compat SDK (`firebase-app-compat.js` +
-`firebase-firestore-compat.js`, via `<script src>` from the `gstatic.com` CDN
-— the one external dependency this file has) and mirrors `DATA` to a single
-Firestore document:
+## Saved reports (localStorage)
 
-- Project: `lab-analytics-555c7` (Google Firebase, free tier), document path
-  `bloodbank_yoy_report/data`.
-- `persist()` writes to both `localStorage` (instant local cache) and that
-  Firestore document (`remoteDoc.set(DATA)`), fire-and-forget.
-- An `onSnapshot` listener on `remoteDoc` (set up right after `DATA` is first
-  loaded) pushes any remote change into `DATA` + `render()` in real time —
-  this is what makes edits show up automatically in every other open browser,
-  no manual export/import needed for the common case. It skips snapshots
-  where `metadata.hasPendingWrites` is true, so a browser doesn't re-render
-  its own just-written change as if it came from elsewhere.
-- `resetData()` calls `persist()` too, so "Reset to original" also propagates
-  to every other browser instead of only resetting the local one.
-- Firestore security rules are wide open (`allow read, write: if true`) —
-  there's no auth. The `apiKey` in `firebaseConfig` is not a secret (Firebase
-  web API keys are meant to be public; access control lives in the rules,
-  not the key), but be aware anyone with the page's source can read/write
-  this document directly, bypassing the UI entirely. Acceptable for this
-  low-stakes internal report; revisit if that assumption ever stops holding.
-- Export/Import (previous section) still exist as a manual/offline fallback
-  — e.g. taking a point-in-time backup, or moving data somewhere with no
-  network access to Firestore.
+"Save Report" doesn't overwrite anything and doesn't sync anywhere — it
+appends a timestamped, deep-cloned snapshot of the current `DATA` to a list
+in `localStorage` under `REPORTS_KEY`. That list is what backs the
+`#savedReportsView` second page:
+
+- `saveReport()` reads the DOM, recalculates, then unshifts
+  `{id, savedAt, data}` onto the list and writes it back — it does **not**
+  clear or otherwise touch the live entry view.
+- `showSavedView()` hides `#sections`/the toolbar and renders the list
+  (newest first) via `renderSavedList()`; each row has **Open** and **Delete**.
+- `openReport(id)` replaces `DATA` with a clone of that snapshot, re-renders,
+  and switches back to the entry view — from there it's fully editable again,
+  and pressing "Save Report" again creates a *new* history entry rather than
+  overwriting the one just opened.
+- `deleteReport(id)` removes one entry from the list (with a confirm).
+- This history is per-browser only (plain `localStorage`, no server). Export/
+  Import (see above) are the way to move a report's data to another machine
+  or take an out-of-browser backup — the saved-reports list itself doesn't
+  travel with the file.
 
 ## Print layout
 
 `@media print` has its own compressed CSS (smaller donuts/icons/fonts, tighter
 section padding, `.toolbar` and `.autosave-note` hidden) so the full report —
 all three sections, both years — fits a single printed page, plus a forced-visible
-signature line at the bottom. This block has been iterated on repeatedly and is
-fragile: the `@media (max-width:760px)` mobile breakpoint can interact badly
-with print pagination (a browser printing at a narrow viewport width picks up
-mobile rules too), so mobile and print rules should be checked together, not
-assumed independent. When touching print CSS, verify with an actual print
-preview, not just by reading the rules.
+signature line at the bottom. It also force-hides `#savedReportsView` and
+force-shows `#sections`, so printing while the Saved Reports list happens to
+be open still prints the entry data, not the list. This block has been
+iterated on repeatedly and is fragile: the `@media (max-width:760px)` mobile
+breakpoint can interact badly with print pagination (a browser printing at a
+narrow viewport width picks up mobile rules too), so mobile and print rules
+should be checked together, not assumed independent. When touching print CSS,
+verify with an actual print preview, not just by reading the rules.
 
 ## Working on this file
 
@@ -125,8 +146,8 @@ preview, not just by reading the rules.
   logic) rather than introducing new files — the app is intentionally a single
   portable HTML file.
 - If you add a new metric or section, update `METRIC_KEYS`/`LABELS`/`COLORS`/
-  `ICONS`/`WHEEL_QUADS` together, and extend `ORIGINAL` with matching shape
-  (`years.<year>.metrics`, `years.<year>.waste`, `years.<year>.rhoneg`) so
-  `resetData()` still works.
+  `ICONS`/`WHEEL_QUADS` together, and extend `BLANK` with matching shape
+  (`years.<year>.metrics`, `years.<year>.waste`, `years.<year>.rhoneg`, all
+  zeroed via `blankYear()`) so `clearAll()` and the initial blank load still work.
 - `recalcAll()` is the single place percentages/derived values are computed —
   don't duplicate that math elsewhere.

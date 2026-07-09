@@ -57,6 +57,21 @@
   .toolbar button.danger:hover{background:var(--red);color:#fff;}
   .toolbar .hint{font-size:12px;color:var(--muted);width:100%;text-align:center;margin-top:-4px;}
 
+  /* ================= saved reports view ================= */
+  .saved-header{display:flex;align-items:center;justify-content:space-between;padding:18px 24px 6px;}
+  .saved-title{font-size:16px;font-weight:800;color:var(--ink);}
+  .saved-header button{font-family:inherit;font-size:13px;font-weight:700;border:1px solid var(--green);background:#fff;color:var(--green);padding:8px 16px;border-radius:20px;cursor:pointer;transition:.15s;}
+  .saved-header button:hover{background:var(--green);color:#fff;}
+  .saved-list{padding:6px 24px 28px;display:flex;flex-direction:column;gap:10px;}
+  .saved-empty{color:var(--muted);font-size:13px;text-align:center;padding:30px 0;}
+  .saved-item{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#f7f8f7;border:1px solid var(--card-border);border-radius:12px;padding:12px 16px;}
+  .saved-item .when{font-size:13px;font-weight:700;color:var(--ink);}
+  .saved-item .actions{display:flex;gap:8px;}
+  .saved-item .actions button{font-family:inherit;font-size:12.5px;font-weight:700;border:1px solid var(--green);background:#fff;color:var(--green);padding:6px 14px;border-radius:16px;cursor:pointer;transition:.15s;}
+  .saved-item .actions button:hover{background:var(--green);color:#fff;}
+  .saved-item .actions button.danger{border-color:var(--red);color:var(--red);}
+  .saved-item .actions button.danger:hover{background:var(--red);color:#fff;}
+
   /* ================= section ================= */
   .section{padding:26px 24px 6px;}
   .section + .section{border-top:1px dashed var(--card-border);}
@@ -115,6 +130,8 @@
     body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
     .toolbar{display:none;}
     .autosave-note{display:none;}
+    #savedReportsView{display:none !important;}
+    #sections{display:block !important;}
     .sheet{box-shadow:none;border-radius:0;}
     [contenteditable]:hover{background:none;}
     .section{page-break-inside:avoid;padding:5px 18px 2px;}
@@ -166,26 +183,38 @@
 
   <div class="toolbar">
     <button onclick="recalcAll()">↻ Recalculate</button>
-    <button onclick="saveData()">💾 Save</button>
-    <button onclick="resetData()" class="danger">⟲ Reset to original</button>
+    <button onclick="saveReport()">💾 Save Report</button>
+    <button onclick="clearAll()" class="danger">⟲ Clear All</button>
     <button onclick="window.print()">🖨 Print / PDF</button>
     <button onclick="exportData()">⭳ Export</button>
     <button onclick="document.getElementById('importFile').click()">⭱ Import</button>
+    <button onclick="showSavedView()">🗂 Saved Reports</button>
     <input type="file" id="importFile" accept="application/json" style="display:none" onchange="importData(event)">
-    <div class="hint">Click any number or label to edit it. Percentages, trend arrows and waste totals update automatically.</div>
+    <div class="hint">Click any number or label to edit it. Percentages, trend arrows and waste totals update automatically. Nothing is saved automatically — press "Save Report" to keep a copy you can reopen later.</div>
   </div>
 
   <div id="sections"></div>
 
-  <div class="autosave-note" style="text-align:center;font-size:11.5px;color:#8a918c;padding:8px 0 24px;">Edits are saved automatically in this browser.</div>
+  <div id="savedReportsView" style="display:none;">
+    <div class="saved-header">
+      <div class="saved-title">🗂 Saved Reports</div>
+      <button onclick="showEntryView()">← Back to Entry</button>
+    </div>
+    <div id="savedReportsList" class="saved-list"></div>
+  </div>
+
+  <div class="autosave-note" style="text-align:center;font-size:11.5px;color:#8a918c;padding:8px 0 24px;">This is a blank entry form — nothing is saved unless you press "Save Report".</div>
   <div class="print-signature" style="display:none;">done bye : Hasan Alagoul</div>
 </div>
 
-<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
 <script>
-const ORIGINAL = {"sections": [{"name": "BLOOD BANK CENTER", "years": {"2024": {"metrics": {"WASTE": 37, "RHNEG": 119, "FEMALE": 51, "DONOR": 1297}, "waste": {"QNS": 16, "Airinfusion": 0, "Dammaged": 3, "Clotted": 11, "OverVolume": 7}, "rhoneg": 68}, "2025": {"metrics": {"WASTE": 49, "RHNEG": 179, "FEMALE": 52, "DONOR": 1191}, "waste": {"QNS": 18, "Airinfusion": 12, "Dammaged": 1, "Clotted": 17, "OverVolume": 1}, "rhoneg": 116}}}, {"name": "DAMY", "years": {"2024": {"metrics": {"WASTE": 24, "RHNEG": 56, "FEMALE": 28, "DONOR": 551}, "waste": {"QNS": 16, "Airinfusion": 1, "Dammaged": 0, "Clotted": 7, "OverVolume": 0}, "rhoneg": 20}, "2025": {"metrics": {"WASTE": 20, "RHNEG": 55, "FEMALE": 40, "DONOR": 560}, "waste": {"QNS": 10, "Airinfusion": 1, "Dammaged": 0, "Clotted": 7, "OverVolume": 0}, "rhoneg": 122}}}, {"name": "MOBILE", "years": {"2024": {"metrics": {"WASTE": 108, "RHNEG": 191, "FEMALE": 198, "DONOR": 2732}, "waste": {"QNS": 57, "Airinfusion": 1, "Dammaged": 0, "Clotted": 30, "OverVolume": 20}, "rhoneg": 99}, "2025": {"metrics": {"WASTE": 173, "RHNEG": 240, "FEMALE": 210, "DONOR": 2925}, "waste": {"QNS": 134, "Airinfusion": 0, "Dammaged": 1, "Clotted": 27, "OverVolume": 1}, "rhoneg": 29}}}]};
-const STORE_KEY = "bloodbank_yoy_report_v3";
+function blankYear(){ return {metrics:{WASTE:0,RHNEG:0,FEMALE:0,DONOR:0}, waste:{QNS:0,Airinfusion:0,Dammaged:0,Clotted:0,OverVolume:0}, rhoneg:0}; }
+const BLANK = {"sections": [
+  {"name":"BLOOD BANK CENTER","years":{"2024":blankYear(),"2025":blankYear()}},
+  {"name":"DAMY","years":{"2024":blankYear(),"2025":blankYear()}},
+  {"name":"MOBILE","years":{"2024":blankYear(),"2025":blankYear()}}
+]};
+const REPORTS_KEY = "bloodbank_yoy_reports_v1";
 
 /* ---- refined, clearer flat icon set ---- */
 const ICONS = {
@@ -220,32 +249,13 @@ const WHEEL_DEFAULT_LABELS = {DONOR:"DONOR", FEMALE:"FEMALE", RHNEG:"RH NEG", WA
 
 function num(v){ const n = parseFloat(String(v).replace(/[^\d.\-]/g,'')); return isNaN(n)?0:n; }
 
-function loadData(){
-  try{ const raw = localStorage.getItem(STORE_KEY); if(raw) return JSON.parse(raw); }catch(e){}
-  return JSON.parse(JSON.stringify(ORIGINAL));
+function loadReports(){
+  try{ const raw = localStorage.getItem(REPORTS_KEY); if(raw) return JSON.parse(raw); }catch(e){}
+  return [];
 }
-let DATA = loadData();
+function saveReports(list){ localStorage.setItem(REPORTS_KEY, JSON.stringify(list)); }
 
-const firebaseConfig = {
-  apiKey: "AIzaSyBZcxkJmfeJQWdco2RN571VljZhjxIRmOQ",
-  authDomain: "lab-analytics-555c7.firebaseapp.com",
-  projectId: "lab-analytics-555c7",
-  storageBucket: "lab-analytics-555c7.firebasestorage.app",
-  messagingSenderId: "398123072045",
-  appId: "1:398123072045:web:ff560850c33fd9b51616a4"
-};
-firebase.initializeApp(firebaseConfig);
-const remoteDoc = firebase.firestore().collection('bloodbank_yoy_report').doc('data');
-
-remoteDoc.onSnapshot(snap=>{
-  if(snap.metadata.hasPendingWrites) return; // echo of our own write, already applied locally
-  if(!snap.exists) return;
-  const remote = snap.data();
-  if(JSON.stringify(remote) === JSON.stringify(DATA)) return;
-  DATA = remote;
-  localStorage.setItem(STORE_KEY, JSON.stringify(DATA));
-  render();
-}, err=>console.error('Firestore sync (read) failed:', err));
+let DATA = JSON.parse(JSON.stringify(BLANK));
 
 function donutHTML(metric){
   return `<div class="donutcell"><div class="donut" data-metric="${metric}">
@@ -275,7 +285,7 @@ function render(){
   });
 
   attachListeners();
-  recalcAll(false);
+  recalcAll();
 }
 
 function yearColHTML(){
@@ -347,7 +357,7 @@ function wheelSVG(sec){
 
 function attachListeners(){
   document.querySelectorAll('#sections [contenteditable]').forEach(elm=>{
-    elm.addEventListener('blur', ()=>{ readDOMIntoData(); recalcAll(); persist(); });
+    elm.addEventListener('blur', ()=>{ readDOMIntoData(); recalcAll(); });
     elm.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); elm.blur(); } });
   });
 }
@@ -382,7 +392,7 @@ function readDOMIntoData(){
   });
 }
 
-function recalcAll(doPersist=true){
+function recalcAll(){
   document.querySelectorAll('.section').forEach(el=>{
     const si = +el.dataset.si;
     const sec = DATA.sections[si];
@@ -456,23 +466,74 @@ function recalcAll(doPersist=true){
       });
     }
   });
-
-  if(doPersist) persist();
 }
 
-function persist(){
-  localStorage.setItem(STORE_KEY, JSON.stringify(DATA));
-  remoteDoc.set(DATA).catch(err=>console.error('Firestore sync (write) failed:', err));
+function saveReport(){
+  readDOMIntoData();
+  recalcAll();
+  const list = loadReports();
+  list.unshift({ id: Date.now(), savedAt: new Date().toISOString(), data: JSON.parse(JSON.stringify(DATA)) });
+  saveReports(list);
+  flash('Saved ✓');
 }
-
-function saveData(){ readDOMIntoData(); recalcAll(); persist(); flash('Saved ✓'); }
-function resetData(){
-  if(!confirm('Reset all values back to the original report? This discards your edits.')) return;
-  DATA = JSON.parse(JSON.stringify(ORIGINAL));
-  persist();
+function clearAll(){
+  if(!confirm('Clear all entered numbers? Nothing is auto-saved, so this cannot be undone (unless you already pressed "Save Report").')) return;
+  DATA = JSON.parse(JSON.stringify(BLANK));
   render();
-  flash('Reset to original');
+  flash('Cleared');
 }
+
+function renderSavedList(){
+  const wrap = document.getElementById('savedReportsList');
+  const list = loadReports();
+  if(!list.length){
+    wrap.innerHTML = '<div class="saved-empty">No saved reports yet. Enter numbers, then press "Save Report".</div>';
+    return;
+  }
+  wrap.innerHTML = list.map(r=>{
+    const when = new Date(r.savedAt).toLocaleString();
+    return `<div class="saved-item">
+      <span class="when">${when}</span>
+      <span class="actions">
+        <button onclick="openReport(${r.id})">Open</button>
+        <button class="danger" onclick="deleteReport(${r.id})">Delete</button>
+      </span>
+    </div>`;
+  }).join('');
+}
+
+function openReport(id){
+  const entry = loadReports().find(r=>r.id===id);
+  if(!entry) return;
+  DATA = JSON.parse(JSON.stringify(entry.data));
+  render();
+  showEntryView();
+  flash('Opened saved report');
+}
+
+function deleteReport(id){
+  if(!confirm('Delete this saved report? This cannot be undone.')) return;
+  saveReports(loadReports().filter(r=>r.id!==id));
+  renderSavedList();
+  flash('Deleted');
+}
+
+function showSavedView(){
+  readDOMIntoData();
+  document.getElementById('sections').style.display = 'none';
+  document.querySelector('.toolbar').style.display = 'none';
+  document.querySelector('.autosave-note').style.display = 'none';
+  renderSavedList();
+  document.getElementById('savedReportsView').style.display = 'block';
+}
+
+function showEntryView(){
+  document.getElementById('savedReportsView').style.display = 'none';
+  document.querySelector('.toolbar').style.display = 'flex';
+  document.querySelector('.autosave-note').style.display = 'block';
+  document.getElementById('sections').style.display = 'block';
+}
+
 function flash(msg){
   const hint = document.querySelector('.toolbar .hint');
   const old = hint.textContent;
@@ -504,7 +565,6 @@ function importData(event){
     if(!parsed || !Array.isArray(parsed.sections)){ alert('This file does not look like a report export.'); return; }
     if(!confirm('Import this file? This replaces all current values.')) return;
     DATA = parsed;
-    persist();
     render();
     flash('Imported ✓');
   };
