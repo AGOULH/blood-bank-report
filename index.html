@@ -516,6 +516,7 @@ async function generatePDF(filename){
   const brandSub = document.querySelector('.brand-sub');
   const prevToolbar = toolbar.style.display;
   const prevNote = note.style.display;
+  const scrollX = window.scrollX, scrollY = window.scrollY;
   toolbar.style.display = 'none';
   note.style.display = 'none';
 
@@ -541,6 +542,9 @@ async function generatePDF(filename){
     restoreSub();
     toolbar.style.display = prevToolbar;
     note.style.display = prevNote;
+    // html2canvas scrolls the window while capturing and doesn't restore it —
+    // put the page back where the user actually was.
+    window.scrollTo(scrollX, scrollY);
   }
 }
 

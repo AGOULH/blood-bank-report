@@ -163,6 +163,12 @@ the capture; both are removed and the original text/color restored in
 complex-script) text anywhere that might end up in a PDF, it needs the same
 image-overlay treatment — plain text in that position will scramble.
 
+`html2canvas` also scrolls the window while capturing and does not reliably
+restore the original scroll position, which left the page visibly jumped
+after "Save Report" (header/toolbar scrolled out of view). `generatePDF()`
+captures `window.scrollX/scrollY` up front and calls `window.scrollTo()` back
+to it in the `finally` block — don't remove that, or the scroll-jump comes back.
+
 ## Print layout
 
 `@media print` has its own compressed CSS (smaller donuts/icons/fonts, tighter
