@@ -22,6 +22,20 @@ Deployed via GitHub Pages from `main`/root at
 https://agoulh.github.io/blood-bank-report/ (repo is public so free-plan
 Pages can serve it).
 
+**Caching gotcha:** GitHub Pages serves this file with `cache-control:
+max-age=600` and there's no way to override that from a static Pages site
+(no custom headers support). Combined with the browser's own disk/back-forward
+cache, this means a real user's browser can keep showing an old version for
+up to ~10 minutes after a push — and has repeatedly been mistaken for a code
+bug mid-session (someone reports X is broken, the deployed source already has
+the fix, a hard refresh / incognito load resolves it every time). `<meta
+http-equiv="Cache-Control/Pragma/Expires">` tags are in `<head>` as a
+best-effort mitigation, but they don't reliably beat a real HTTP
+`cache-control` header in every browser. **Before debugging a "still broken"
+report against the live site, fetch the live HTML directly (`curl` or a
+fresh Playwright context, not the reporter's browser) and compare it to what
+was actually pushed — if they already match, it's stale cache, not a bug.**
+
 ## What it shows
 
 The report is a blank data-entry form: every field starts at `0`/empty on
