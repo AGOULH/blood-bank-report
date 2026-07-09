@@ -3,13 +3,13 @@
 A single self-contained HTML file (`index.html`, originally
 `blood_bank_yoy_report.html`) that renders an
 editable, printable year-over-year statistics report for the **Central Blood
-Bank, Dammam** (Saudi Ministry of Health). No build step, no package manager
-— open the file directly in a browser. It loads one external script
-(`html2pdf.js` via CDN, see "Save Report → automatic PDF" below) to generate
-PDFs without a print dialog, but there's still no backend/server code of our
-own. Everything else is local: the entry form starts blank every time it's
-opened (see "Editing model" below), and anything the user chooses to keep
-lives only in that browser's `localStorage` (see "Saved reports" below).
+Bank, Dammam** (Saudi Ministry of Health). No build step, no package manager,
+no external services — open the file directly in a browser. Everything is
+local: the entry form starts blank every time it's opened (see "Editing
+model" below), and anything the user chooses to keep lives only in that
+browser's `localStorage` (see "Saved reports" below). PDF export is just the
+browser's native print-to-PDF via the "Print / PDF" button (`window.print()`)
+— deliberately not auto-generated (see "Working on this file" for why).
 
 This is a separate project from the "blood-bank-inventory" app in
 `~/Downloads/index.html` — that one tracks day-to-day inventory with an
@@ -59,10 +59,7 @@ Details" line for O-negative count.
 - `<div class="autosave-note">` — reminds the user nothing is saved automatically; hidden in print
 - `<div class="print-signature">` — signature line ("done bye : Hasan Alagoul");
   `display:none` on screen, forced `display:block` only inside `@media print`
-- `<script src=".../html2pdf.bundle.min.js">` — the one external dependency (CDN,
-  cdnjs); wraps `html2canvas` + `jsPDF` to generate a PDF from the DOM without a
-  print dialog
-- `<script>` — all app logic:
+- `<script>` — all app logic, no external JS dependencies:
   - `blankYear()` / `BLANK` — the all-zero starting template (source of truth for
     both the initial `DATA` and "Clear All"); section names (`BLOOD BANK CENTER`,
     `DAMY`, `MOBILE`) and year labels (`2024`/`2025`) are pre-filled, all numbers are `0`
@@ -79,10 +76,7 @@ Details" line for O-negative count.
   - `readDOMIntoData()` — reverse-syncs edited DOM values back into `DATA`
   - `recalcAll()` — recomputes WASTE totals, all percentages, donut fills, and trend arrows; the only place derived values are computed. Purely in-memory/DOM — no storage side effect.
   - `saveReport()` / `clearAll()` — snapshot the current entry into saved-report
-    history (and trigger a PDF download, see below), and wipe the entry view
-    back to `BLANK`, respectively
-  - `generatePDF(filename)` / `arabicTextToImage(...)` / `overlayArabicImage(...)`
-    — PDF export, called by `saveReport()`; see "Save Report → automatic PDF" below
+    history, and wipe the entry view back to `BLANK`, respectively
   - `loadReports()` / `saveReports(list)` / `renderSavedList()` / `openReport(id)` /
     `deleteReport(id)` — read/write the saved-report history and render/act on
     `#savedReportsView`'s list
@@ -134,41 +128,6 @@ in `localStorage` under `REPORTS_KEY`. That list is what backs the
   or take an out-of-browser backup — the saved-reports list itself doesn't
   travel with the file.
 
-## Save Report → automatic PDF
-
-Pressing "Save Report" does two independent things: appends a snapshot to the
-saved-reports history (above), and calls `generatePDF()` to download a PDF of
-the report immediately — no print dialog, no manual "Save as PDF" step.
-
-`generatePDF()` uses `html2pdf.js` (`html2canvas` + `jsPDF` under the hood) to
-rasterize `.sheet` and wrap it in a PDF, after hiding `.toolbar` and
-`.autosave-note` (restored in a `finally`).
-
-**Known `html2canvas` limitation, and the workaround already in place:**
-`html2canvas` does not correctly shape/reorder Arabic (or other complex-script)
-text — the header's Arabic lines (`.brand-ar` "وزارة الصحة" and `.brand-sub`
-"بنك الدم المركزي بالدمام") would come out with scrambled letter/word order if
-captured as live DOM text. Neither `letterRendering` nor `foreignObjectRendering`
-html2canvas options fix this reliably (the latter fixes the text but crops/
-mispositions the rest of the page — do not re-enable it without re-verifying
-the whole layout). The actual fix: `arabicTextToImage()` renders each Arabic
-line to an offscreen `<canvas>` using the browser's own `fillText()` (which
-*does* shape Arabic correctly, since it goes through the OS text engine, not
-html2canvas's own layout code) and produces a PNG. `overlayArabicImage()`
-makes the live text transparent (keeping its box/border/padding intact — the
-divider line under "MINISTRY OF HEALTH" lives on `.brand-sub`'s `border-top`)
-and absolutely-positions that PNG centered on top, only for the duration of
-the capture; both are removed and the original text/color restored in
-`generatePDF()`'s `finally` block. If you add more Arabic (or other RTL/
-complex-script) text anywhere that might end up in a PDF, it needs the same
-image-overlay treatment — plain text in that position will scramble.
-
-`html2canvas` also scrolls the window while capturing and does not reliably
-restore the original scroll position, which left the page visibly jumped
-after "Save Report" (header/toolbar scrolled out of view). `generatePDF()`
-captures `window.scrollX/scrollY` up front and calls `window.scrollTo()` back
-to it in the `finally` block — don't remove that, or the scroll-jump comes back.
-
 ## Print layout
 
 `@media print` has its own compressed CSS (smaller donuts/icons/fonts, tighter
@@ -194,3 +153,11 @@ verify with an actual print preview, not just by reading the rules.
   zeroed via `blankYear()`) so `clearAll()` and the initial blank load still work.
 - `recalcAll()` is the single place percentages/derived values are computed —
   don't duplicate that math elsewhere.
+- "Save Report" does not auto-generate a PDF. An `html2pdf.js`/`html2canvas`-based
+  version was tried and reverted: it scrambled the Arabic header text (a known
+  html2canvas RTL/complex-script limitation) and separately made the page jump
+  scroll position after every save. Both were fixable, but the user preferred
+  matching the plain save-only flow of another app of theirs — "Save Report"
+  just writes to the saved-reports history, nothing else. PDF export stays on
+  the "Print / PDF" button (`window.print()`), which never had either problem
+  since it uses the browser's own text/layout engine, not a rasterizer.
