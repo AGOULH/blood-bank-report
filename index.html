@@ -485,8 +485,9 @@ function recalcAll(){
 function saveReport(){
   readDOMIntoData();
   recalcAll();
+  flash('Saved ✓'); // optimistic — Firestore's own write confirmation can take a beat,
+                     // but the click should feel instant; a failure below still alerts
   reportsCol.add({ savedAt: new Date().toISOString(), data: JSON.parse(JSON.stringify(DATA)) })
-    .then(()=>flash('Saved ✓'))
     .catch(err=>{ console.error('Save failed:', err); alert('Could not save — check your internet connection and try again.'); });
 }
 function clearAll(){
