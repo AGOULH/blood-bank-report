@@ -188,7 +188,7 @@
     <button onclick="recalcAll()">↻ Recalculate</button>
     <button onclick="saveReport()">💾 Save Report</button>
     <button onclick="clearAll()" class="danger">⟲ Clear All</button>
-    <button onclick="window.print()">🖨 Print / PDF</button>
+    <button onclick="generatePDF()">🖨 Print / PDF</button>
     <button onclick="exportData()">⭳ Export</button>
     <button onclick="document.getElementById('importFile').click()">⭱ Import</button>
     <button onclick="showSavedView()">🗂 Saved Reports</button>
@@ -212,6 +212,7 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <script>
 function blankYear(){ return {metrics:{WASTE:0,RHNEG:0,FEMALE:0,DONOR:0}, waste:{QNS:0,Airinfusion:0,Dammaged:0,Clotted:0,OverVolume:0}, rhoneg:0}; }
 const BLANK = {"sections": [
@@ -483,6 +484,86 @@ function recalcAll(){
       });
     }
   });
+}
+
+// html2canvas (used by html2pdf) doesn't shape Arabic/RTL text correctly — it
+// scrambles letter/word order. The browser's own canvas fillText() does shape
+// it correctly (via the OS text engine), so for PDF export only, we pre-render
+// the Arabic header lines to bitmaps and overlay them on top of the (still
+// present, just made transparent) live text — layout/borders are unaffected,
+// only the glyphs are swapped for a correctly-shaped image.
+async function arabicTextToImage(text, fontSizePx, fontWeight, color){
+  await document.fonts.ready;
+  const scale = 3;
+  const font = `${fontWeight} ${fontSizePx*scale}px Cairo, sans-serif`;
+  const measure = document.createElement('canvas').getContext('2d');
+  measure.font = font;
+  measure.direction = 'rtl';
+  const width = Math.ceil(measure.measureText(text).width) + 10*scale;
+  const height = Math.ceil(fontSizePx*scale*1.5);
+  const canvas = document.createElement('canvas');
+  canvas.width = width; canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  ctx.font = font;
+  ctx.direction = 'rtl';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = color;
+  ctx.fillText(text, width/2, height/2);
+  const img = document.createElement('img');
+  img.src = canvas.toDataURL('image/png');
+  img.style.cssText = `position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:${width/scale}px;height:${height/scale}px;pointer-events:none;`;
+  return img;
+}
+
+function overlayArabicImage(el, img){
+  const prevPosition = el.style.position;
+  const prevColor = el.style.color;
+  el.style.position = 'relative';
+  el.style.color = 'transparent';
+  el.appendChild(img);
+  return () => { img.remove(); el.style.position = prevPosition; el.style.color = prevColor; };
+}
+
+async function generatePDF(){
+  const toolbar = document.querySelector('.toolbar');
+  const note = document.querySelector('.autosave-note');
+  const sheet = document.querySelector('.sheet');
+  const brandAr = document.querySelector('.brand-ar');
+  const brandSub = document.querySelector('.brand-sub');
+  const prevToolbar = toolbar.style.display;
+  const prevNote = note.style.display;
+  const scrollX = window.scrollX, scrollY = window.scrollY;
+  toolbar.style.display = 'none';
+  note.style.display = 'none';
+
+  const arStyle = getComputedStyle(brandAr);
+  const subStyle = getComputedStyle(brandSub);
+  const [arImg, subImg] = await Promise.all([
+    arabicTextToImage(brandAr.textContent.trim(), parseFloat(arStyle.fontSize), 800, arStyle.color),
+    arabicTextToImage(brandSub.textContent.trim(), parseFloat(subStyle.fontSize), 800, subStyle.color)
+  ]);
+  const restoreAr = overlayArabicImage(brandAr, arImg);
+  const restoreSub = overlayArabicImage(brandSub, subImg);
+
+  const filename = `blood_bank_yoy_report_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.pdf`;
+  try{
+    await html2pdf().set({
+      margin: 0.25,
+      filename: filename,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true },
+      jsPDF: { unit: 'in', format: 'a4', orientation: 'landscape' }
+    }).from(sheet).save();
+  } finally {
+    restoreAr();
+    restoreSub();
+    toolbar.style.display = prevToolbar;
+    note.style.display = prevNote;
+    // html2canvas scrolls the window while capturing and doesn't restore it —
+    // put the page back where the user actually was.
+    window.scrollTo(scrollX, scrollY);
+  }
 }
 
 function saveReport(){

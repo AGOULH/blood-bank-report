@@ -4,14 +4,13 @@ A single self-contained HTML file (`index.html`, originally
 `blood_bank_yoy_report.html`) that renders an
 editable, printable year-over-year statistics report for the **Central Blood
 Bank, Dammam** (Saudi Ministry of Health). No build step, no package manager
-— open the file directly in a browser. It does talk to one external service
-(Firestore, see "Saved reports" below) so saved reports show up the same in
-any browser/device, but there's still no custom backend/server code of our
-own. The entry form itself starts blank every time it's opened (see "Editing
-model" below) and is never auto-saved — only an explicit "Save Report" press
-persists anything. PDF export is just the browser's native print-to-PDF via
-the "Print / PDF" button (`window.print()`) — deliberately not auto-generated
-(see "Working on this file" for why).
+— open the file directly in a browser. It does talk to external services:
+Firestore (see "Saved reports" below) so saved reports show up the same in
+any browser/device, and `html2pdf.js`/CDN so "Print / PDF" downloads a PDF
+directly (see "PDF export" below) — but there's still no custom backend/
+server code of our own. The entry form itself starts blank every time it's
+opened (see "Editing model" below) and is never auto-saved — only an
+explicit "Save Report" press persists anything.
 
 This is a separate project from the "blood-bank-inventory" app in
 `~/Downloads/index.html` — that one tracks day-to-day inventory with an
@@ -76,7 +75,9 @@ Details" line for O-negative count.
 - `<div class="print-signature">` — signature line ("done bye : Hasan Alagoul");
   `display:none` on screen, forced `display:block` only inside `@media print`
 - `<script src=".../firebase-app-compat.js">` / `<script src=".../firebase-firestore-compat.js">`
-  — the two external dependencies (CDN, gstatic.com), for the saved-reports Firestore sync
+  — CDN (gstatic.com), for the saved-reports Firestore sync
+- `<script src=".../html2pdf.bundle.min.js">` — CDN (cdnjs); wraps `html2canvas` +
+  `jsPDF` so "Print / PDF" downloads a PDF directly (see "PDF export" below)
 - `<script>` — all app logic:
   - `blankYear()` / `BLANK` — the all-zero starting template (source of truth for
     both the initial `DATA` and "Clear All"); section names (`BLOOD BANK CENTER`,
@@ -97,6 +98,8 @@ Details" line for O-negative count.
   - `recalcAll()` — recomputes WASTE totals, all percentages, donut fills, and trend arrows; the only place derived values are computed. Purely in-memory/DOM — no storage side effect.
   - `saveReport()` / `clearAll()` — snapshot the current entry into Firestore's
     saved-report history, and wipe the entry view back to `BLANK`, respectively
+  - `generatePDF()` / `arabicTextToImage(...)` / `overlayArabicImage(...)` — PDF
+    export, called by the "Print / PDF" button; see "PDF export" below
   - `renderSavedList()` / `openReport(id)` / `deleteReport(id)` — render
     `reportsCache` into `#savedReportsView`'s list, and act on one entry
     (Firestore doc IDs are strings — don't drop the quotes in the generated
@@ -162,6 +165,47 @@ path, that's the live-sync behavior that was intentionally removed.
   out-of-browser backup, or moving one report's data somewhere with no
   network access to Firestore.
 
+## PDF export
+
+The "Print / PDF" button calls `generatePDF()` directly — it downloads a PDF
+immediately, no print dialog. (Earlier it called `window.print()`; that was
+changed because a print dialog read as "it redirected me to the browser" —
+users expect one click to produce a file.) `generatePDF()` rasterizes `.sheet`
+via `html2pdf.js` (`html2canvas` + `jsPDF`), after hiding `.toolbar` and
+`.autosave-note` (restored in a `finally`).
+
+**Known `html2canvas` limitation, and the workaround already in place:**
+`html2canvas` does not correctly shape/reorder Arabic (or other complex-script)
+text — the header's Arabic lines (`.brand-ar` "وزارة الصحة" and `.brand-sub`
+"بنك الدم المركزي بالدمام") would come out with scrambled letter/word order if
+captured as live DOM text. Neither `letterRendering` nor `foreignObjectRendering`
+html2canvas options fix this reliably (the latter fixes the text but crops/
+mispositions the rest of the page — do not re-enable it without re-verifying
+the whole layout). The actual fix: `arabicTextToImage()` renders each Arabic
+line to an offscreen `<canvas>` using the browser's own `fillText()` (which
+*does* shape Arabic correctly, since it goes through the OS text engine, not
+html2canvas's own layout code) and produces a PNG. `overlayArabicImage()`
+makes the live text transparent (keeping its box/border/padding intact — the
+divider line under "MINISTRY OF HEALTH" lives on `.brand-sub`'s `border-top`)
+and absolutely-positions that PNG centered on top, only for the duration of
+the capture; both are removed and the original text/color restored in
+`generatePDF()`'s `finally` block. If you add more Arabic (or other RTL/
+complex-script) text anywhere that might end up in a PDF, it needs the same
+image-overlay treatment — plain text in that position will scramble.
+
+`html2canvas` also scrolls the window while capturing and does not reliably
+restore the original scroll position, which visibly jumped the page (header/
+toolbar scrolled out of view) if left unhandled. `generatePDF()` captures
+`window.scrollX/scrollY` up front and calls `window.scrollTo()` back to it in
+the `finally` block — don't remove that, or the scroll-jump comes back.
+
+This was tried, reverted (in favor of `window.print()`), then reinstated
+after the print-dialog UX turned out to be the actual complaint — both
+`html2canvas` bugs above were already solved before the revert, so bringing
+it back was just re-adding the same verified code, not re-debugging from
+scratch. If it needs to be reverted again, `git log` has the full history of
+both the addition and the revert to compare against.
+
 ## Print layout
 
 `@media print` has its own compressed CSS (smaller donuts/icons/fonts, tighter
@@ -169,12 +213,16 @@ section padding, `.toolbar` and `.autosave-note` hidden) so the full report —
 all three sections, both years — fits a single printed page, plus a forced-visible
 signature line at the bottom. It also force-hides `#savedReportsView` and
 force-shows `#sections`, so printing while the Saved Reports list happens to
-be open still prints the entry data, not the list. This block has been
-iterated on repeatedly and is fragile: the `@media (max-width:760px)` mobile
-breakpoint can interact badly with print pagination (a browser printing at a
-narrow viewport width picks up mobile rules too), so mobile and print rules
-should be checked together, not assumed independent. When touching print CSS,
-verify with an actual print preview, not just by reading the rules.
+be open still prints the entry data, not the list. **Since the "Print / PDF"
+button now calls `generatePDF()` instead of `window.print()`, this CSS is only
+reached via the browser's own manual print action (Ctrl/Cmd+P, right-click →
+Print) — it's still there and still worth keeping correct, just no longer the
+primary path.** This block has been iterated on repeatedly and is fragile: the
+`@media (max-width:760px)` mobile breakpoint can interact badly with print
+pagination (a browser printing at a narrow viewport width picks up mobile
+rules too), so mobile and print rules should be checked together, not assumed
+independent. When touching print CSS, verify with an actual print preview,
+not just by reading the rules.
 
 ## Working on this file
 
@@ -187,11 +235,7 @@ verify with an actual print preview, not just by reading the rules.
   zeroed via `blankYear()`) so `clearAll()` and the initial blank load still work.
 - `recalcAll()` is the single place percentages/derived values are computed —
   don't duplicate that math elsewhere.
-- "Save Report" does not auto-generate a PDF. An `html2pdf.js`/`html2canvas`-based
-  version was tried and reverted: it scrambled the Arabic header text (a known
-  html2canvas RTL/complex-script limitation) and separately made the page jump
-  scroll position after every save. Both were fixable, but the user preferred
-  matching the plain save-only flow of another app of theirs — "Save Report"
-  just writes to the saved-reports history, nothing else. PDF export stays on
-  the "Print / PDF" button (`window.print()`), which never had either problem
-  since it uses the browser's own text/layout engine, not a rasterizer.
+- "Save Report" (Firestore) and "Print / PDF" (`generatePDF()`) are deliberately
+  separate actions with separate failure modes — don't merge them back into one
+  button's click handler. Keep PDF generation's Arabic-text/scroll workarounds
+  (see "PDF export" above) intact if you touch `generatePDF()`.
